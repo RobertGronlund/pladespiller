@@ -4,6 +4,12 @@ A robust, battery-powered, open-source toy that mimics a classic record player. 
 
 The project prioritizes **low power consumption**, **ease of assembly** (no custom PCBs), and **simple physical interaction**.
 
+## TODO: 
+Currently the NFC scanner is not scanning.
+* Change NFC power to BAT
+* Maybe add resistor to dfplayer RX line
+* Add cap to DFPlayer power
+
 ## ✨ Features
 
   * **Physical Interaction:** Place a record to play, remove to stop (or change songs).
@@ -88,3 +94,5 @@ SD Card Root
 3.  **Map Tags:** Run the "Reader" sketch to get UIDs from your stickers. Update the `uid_to_song` mapping in the main code.
 4.  **Assemble:** Solder components to perfboard following the wiring diagram.
 5.  **Play:** Insert battery, flip the switch, place a record, and press Play\!
+
+
