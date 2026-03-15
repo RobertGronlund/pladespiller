@@ -33,6 +33,14 @@ MFRC522 mfrc522(NFC_CS_PIN, NFC_RST_PIN);
 DFRobotDFPlayerMini myDFPlayer;
 
 bool maintenanceMode = false;
+volatile bool buttonPressed = false;
+unsigned long lastPlayStart = 0;
+bool isPlaying = false;
+
+// Interrupt handler for WAKE_BUTTON_PIN
+void IRAM_ATTR handleButtonPress() {
+  buttonPressed = true;
+}
 
 void setup() {
   Serial.begin(115200);
@@ -46,7 +54,7 @@ void setup() {
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
   // Give modules time to boot from a cold start
-  delay(1500); 
+  delay(100); 
 
   // 2. CHECK MAINTENANCE MODE
   if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
@@ -77,47 +85,12 @@ void setup() {
     myDFPlayer.volume(20);
   }
 
-  // 5. NORMAL MODE LOGIC
+  // 5. ATTACH INTERRUPT FOR WAKE BUTTON
+  attachInterrupt(digitalPinToInterrupt(WAKE_BUTTON_PIN), handleButtonPress, FALLING);
+  
   if (!maintenanceMode) {
-    int songID = -1;
-    unsigned long scanStart = millis();
-
-    Serial.println("Scanning for NFC Tag...");
-    while (millis() - scanStart < 5000) {
-      if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-        songID = getSongFromUID(mfrc522.uid.uidByte, mfrc522.uid.size);
-        mfrc522.PICC_HaltA();
-        mfrc522.PCD_StopCrypto1();
-        break; 
-      }
-      delay(50);
-    }
-
-    if (songID != -1) {
-      Serial.printf("Playing Song #%d\n", songID);
-      myDFPlayer.play(songID); 
-      
-      // Wait for song to finish (using your 30s max duration)
-      // ESP32 stays awake to keep the MOSFET ON
-      Serial.println("Song playing... staying awake for 30s.");
-      delay(30000); 
-    } else {
-      Serial.println("No card found.");
-    }
-
-    // 6. SHUTDOWN SEQUENCE
-    Serial.println("Shutting down Power Island...");
-    mfrc522.PCD_SoftPowerDown();
-    digitalWrite(POWER_GATE_PIN, LOW); // MOSFET OFF - Kills GND to DFPlayer/NFC
-    
-    // Configure ESP32-C6 Wakeup
-    // 0 = Wake on LOW (button press)
-    esp_deep_sleep_enable_gpio_wakeup(1ULL << WAKE_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
-    
-    Serial.println("Deep Sleep. Zzz...");
-    Serial.flush();
-    delay(10);
-    esp_deep_sleep_start();
+    Serial.println("Normal mode: Press button to scan and play.");
+    buttonPressed = true; // Trigger initial scan on startup
   }
 }
 
@@ -142,8 +115,74 @@ void loop() {
     } else {
       Serial.println("Waiting for card...");
     }
+    delay(500);
+  } else {
+    // NORMAL MODE: Scan and play on button press
+    if (buttonPressed) {
+      buttonPressed = false;
+      lastPlayStart = millis();
+      isPlaying = false;
+      
+      int songID = -1;
+      unsigned long scanStart = millis();
+
+      Serial.println("Scanning for NFC Tag (5s timeout)...");
+      while (millis() - scanStart < 5000) {
+        // Allow button to interrupt scan
+        if (buttonPressed) {
+          buttonPressed = false;
+          lastPlayStart = millis();
+          scanStart = millis(); // Restart the 5-second scan window
+          Serial.println("Button pressed - restarting scan...");
+          continue;
+        }
+        
+        if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+          songID = getSongFromUID(mfrc522.uid.uidByte, mfrc522.uid.size);
+          mfrc522.PICC_HaltA();
+          mfrc522.PCD_StopCrypto1();
+          break; 
+        }
+        delay(50);
+      }
+
+      if (songID != -1) {
+        Serial.printf("Playing Song #%d\n", songID);
+        myDFPlayer.play(songID);
+        isPlaying = true;
+        lastPlayStart = millis(); // Reset the 30s timer
+        Serial.println("Song playing. Press button anytime to restart.");
+      } else {
+        Serial.println("No card found. Press button to try again.");
+      }
+    }
+
+    // Check if 30 seconds have elapsed since play started
+    if (isPlaying && (millis() - lastPlayStart >= 30000)) {
+      Serial.println("30s timeout reached. Shutting down...");
+      shutdownDevice();
+    }
+
+    delay(50);
   }
-  delay(500);
+}
+
+void shutdownDevice() {
+  isPlaying = false;
+  myDFPlayer.stop();
+  
+  Serial.println("Shutting down Power Island...");
+  mfrc522.PCD_SoftPowerDown();
+  digitalWrite(POWER_GATE_PIN, LOW); // MOSFET OFF - Kills GND to DFPlayer/NFC
+  
+  // Configure ESP32-C6 Wakeup
+  // 0 = Wake on LOW (button press)
+  esp_deep_sleep_enable_gpio_wakeup(1ULL << WAKE_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+  
+  Serial.println("Deep Sleep. Zzz...");
+  Serial.flush();
+  delay(10);
+  esp_deep_sleep_start();
 }
 
 
