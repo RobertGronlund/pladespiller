@@ -59,15 +59,13 @@ void setup() {
   SPI.begin(NFC_SCK_PIN, NFC_MISO_PIN, NFC_MOSI_PIN);
   mfrc522.PCD_Init();
   
-  // CRITICAL: Enable antenna power
+  // Enable antenna power
   if (mfrc522.PCD_GetAntennaGain() == 0x00) {
     mfrc522.PCD_SetAntennaGain(0x07 << 4);
     Serial.println("Antenna gain set to max.");
   }
   mfrc522.PCD_AntennaOn();
   Serial.println("NFC Antenna powered ON.");
-  
-  mfrc522.PCD_DumpVersionToSerial(); // Debug: shows NFC chip version
   
   dfSerial.begin(9600, SERIAL_8N1, DF_RX_PIN, DF_TX_PIN);
 
@@ -76,7 +74,7 @@ void setup() {
     Serial.println("DFPlayer Error: Check SD card or wiring.");
   } else {
     Serial.println("DFPlayer Online.");
-    myDFPlayer.volume(10); // Keep low if clicking persists
+    myDFPlayer.volume(20);
   }
 
   // 5. NORMAL MODE LOGIC

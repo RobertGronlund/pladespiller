@@ -5,8 +5,10 @@ A robust, battery-powered, open-source toy that mimics a classic record player. 
 The project prioritizes **low power consumption**, **ease of assembly** (no custom PCBs), and **simple physical interaction**.
 
 ## TODO: 
-Currently the NFC scanner is not scanning.
-* Change NFC power to BAT
+### Software
+* Enable quick reset of songs
+
+### Hardware (maybe)
 * Maybe add resistor to dfplayer RX line
 * Add cap to DFPlayer power
 
