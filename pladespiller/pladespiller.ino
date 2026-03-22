@@ -31,11 +31,18 @@
 MFRC522 mfrc522(NFC_CS_PIN, NFC_RST_PIN);
 #define dfSerial Serial1
 DFRobotDFPlayerMini myDFPlayer;
+int volumeLevel = 5; // Default volume (0-30)
 
 bool maintenanceMode = false;
 volatile bool buttonPressed = false;
 unsigned long lastPlayStart = 0;
 bool isPlaying = false;
+byte currentCardUID[10];
+byte currentCardUIDSize = 0;
+int cardMissCount = 0;
+int cardMissThreshold = 2; // Number of consecutive misses before considering card removed
+unsigned long lastCardCheckTime = 0;
+
 
 // Interrupt handler for WAKE_BUTTON_PIN
 void IRAM_ATTR handleButtonPress() {
@@ -82,7 +89,7 @@ void setup() {
     Serial.println("DFPlayer Error: Check SD card or wiring.");
   } else {
     Serial.println("DFPlayer Online.");
-    myDFPlayer.volume(20);
+    myDFPlayer.volume(volumeLevel);
   }
 
   // 5. ATTACH INTERRUPT FOR WAKE BUTTON
@@ -139,8 +146,6 @@ void loop() {
         
         if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
           songID = getSongFromUID(mfrc522.uid.uidByte, mfrc522.uid.size);
-          mfrc522.PICC_HaltA();
-          mfrc522.PCD_StopCrypto1();
           break; 
         }
         delay(50);
@@ -151,13 +156,32 @@ void loop() {
         myDFPlayer.play(songID);
         isPlaying = true;
         lastPlayStart = millis(); // Reset the 30s timer
-        Serial.println("Song playing. Press button anytime to restart.");
+        lastCardCheckTime = millis(); // Initialize card check timer
+        cardMissCount = 0; // Reset miss counter
+        // Store the current card UID for removal detection
+        memcpy(currentCardUID, mfrc522.uid.uidByte, mfrc522.uid.size);
+        currentCardUIDSize = mfrc522.uid.size;
+        Serial.println("Song playing. Remove tag to stop and shutdown.");
       } else {
         Serial.println("No card found. Press button to try again.");
       }
     }
 
-    // Check if 30 seconds have elapsed since play started
+    // Check for card removal during playback (every 500ms)
+    if (isPlaying && (millis() - lastCardCheckTime >= 500)) {
+      lastCardCheckTime = millis();
+      if (isCurrentCardPresent()) {
+        cardMissCount = 0; // Card still there, reset counter
+      } else {
+        cardMissCount++;
+        if (cardMissCount >= cardMissThreshold) {
+          Serial.println("Card removed. Stopping playback and shutting down...");
+          shutdownDevice();
+        }
+      }
+    }
+
+    // Check if 30 seconds have elapsed since play started (backup timeout)
     if (isPlaying && (millis() - lastPlayStart >= 30000)) {
       Serial.println("30s timeout reached. Shutting down...");
       shutdownDevice();
@@ -170,6 +194,10 @@ void loop() {
 void shutdownDevice() {
   isPlaying = false;
   myDFPlayer.stop();
+  
+  // Clean up the NFC card - halt and stop crypto
+  mfrc522.PICC_HaltA();
+  mfrc522.PCD_StopCrypto1();
   
   Serial.println("Shutting down Power Island...");
   mfrc522.PCD_SoftPowerDown();
@@ -185,6 +213,40 @@ void shutdownDevice() {
   esp_deep_sleep_start();
 }
 
+
+bool isCurrentCardPresent() {
+  // Detect Tag without looking for collisions using PICC_RequestA
+  byte bufferATQA[2];
+  byte bufferSize = sizeof(bufferATQA);
+
+  // Reset baud rates
+  mfrc522.PCD_WriteRegister(mfrc522.TxModeReg, 0x00);
+  mfrc522.PCD_WriteRegister(mfrc522.RxModeReg, 0x00);
+  // Reset ModWidthReg
+  mfrc522.PCD_WriteRegister(mfrc522.ModWidthReg, 0x26);
+
+  MFRC522::StatusCode result = mfrc522.PICC_RequestA(bufferATQA, &bufferSize);
+
+  if (result == mfrc522.STATUS_OK) {
+    if (!mfrc522.PICC_ReadCardSerial()) {
+      return false;
+    }
+    
+    // Check if it matches the card that triggered playback
+    if (mfrc522.uid.size == currentCardUIDSize && 
+        memcmp(mfrc522.uid.uidByte, currentCardUID, currentCardUIDSize) == 0) {
+      // Don't halt yet - keep card active for next check
+      return true;
+    }
+    
+    // Card detected but doesn't match - halt this one
+    mfrc522.PICC_HaltA();
+    mfrc522.PCD_StopCrypto1();
+    return false;
+  }
+  
+  return false; // No card detected
+}
 
 int getSongFromUID(byte *uid, byte size) {
   // Add your tag UIDs here
