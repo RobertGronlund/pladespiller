@@ -31,7 +31,7 @@
 MFRC522 mfrc522(NFC_CS_PIN, NFC_RST_PIN);
 #define dfSerial Serial1
 DFRobotDFPlayerMini myDFPlayer;
-int volumeLevel = 5; // Default volume (0-30)
+int volumeLevel = 20; // Default volume (0-30)
 
 bool maintenanceMode = false;
 volatile bool buttonPressed = false;
@@ -250,11 +250,23 @@ bool isCurrentCardPresent() {
 
 int getSongFromUID(byte *uid, byte size) {
   // Add your tag UIDs here
-  const byte tag1[] = {0x04, 0x1B, 0x7E, 0xF2, 0x2F, 0x4D, 0x81};
-  const byte tag2[] = {0x04, 0x23, 0x7E, 0xF2, 0x2F, 0x4D, 0x81};
+  const byte tag1[] = {0x04, 0x6F, 0x7F, 0xF2, 0x2F, 0x4D, 0x81};
+  const byte tag2[] = {0x04, 0x1B, 0x7E, 0xF2, 0x2F, 0x4D, 0x81};
+  const byte tag3[] = {0x04, 0x23, 0x7E, 0xF2, 0x2F, 0x4D, 0x81};
+  const byte tag4[] = {0x04, 0x77, 0x7F, 0xF2, 0x2F, 0x4D, 0x81};
+  const byte tag5[] = {0x04, 0x7F, 0x7F, 0xF2, 0x2F, 0x4D, 0x81};
+  const byte tag6[] = {0x04, 0x86, 0x7E, 0xF2, 0x2F, 0x4D, 0x81};
+  const byte tag7[] = {0x04, 0x8E, 0x7E, 0xF2, 0x2F, 0x4D, 0x81};
+  const byte tag8[] = {0x04, 0x45, 0x7F, 0xF2, 0x2F, 0x4D, 0x81};
 
-  if (memcmp(uid, tag1, 7) == 0) return 2;
-  if (memcmp(uid, tag2, 7) == 0) return 3;
+  if (memcmp(uid, tag1, 7) == 0) return 1;
+  if (memcmp(uid, tag2, 7) == 0) return 2;
+  if (memcmp(uid, tag3, 7) == 0) return 3;
+  if (memcmp(uid, tag4, 7) == 0) return 4;
+  if (memcmp(uid, tag5, 7) == 0) return 5;
+  if (memcmp(uid, tag6, 7) == 0) return 6;
+  if (memcmp(uid, tag7, 7) == 0) return 7;
+  if (memcmp(uid, tag8, 7) == 0) return 8;
 
   return -1;
 }
