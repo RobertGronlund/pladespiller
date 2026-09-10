@@ -4,97 +4,97 @@ A robust, battery-powered, open-source toy that mimics a classic record player. 
 
 The project prioritizes **low power consumption**, **ease of assembly** (no custom PCBs), and **simple physical interaction**.
 
-## TODO: 
-### Software
-* Enable quick reset of songs
+## TODO
 
-### Hardware (maybe)
-* Maybe add resistor to dfplayer RX line
+**Software**
+* Enable quick reset of songs
+* Playback should use `playLargeFolder(1, songID)` to match the `/01/` SD folder structure (currently uses `play(songID)`)
+
+**Hardware (maybe)**
 * Add cap to DFPlayer power
 
 ## ✨ Features
 
-  * **Physical Interaction:** Place a record to play, remove to stop (or change songs).
-  * **Long Battery Life:** Utilizes **Deep Sleep** modes on the ESP32-C6; the system wakes up only to read a tag or process a button press.
-  * **Rechargeable:** Powered by a single 18650 Li-Ion cell with USB-C charging (via DFRobot Beetle C6).
-  * **High-Quality Audio:** Uses the DFPlayer Mini with a dedicated speaker.
-  * **No Custom PCBs:** Designed for point-to-point wiring on perfboard.
+* **Physical Interaction:** Place a record to play, remove to stop (or change songs).
+* **Long Battery Life:** Deep Sleep between reads on the ESP32-C6, with a high-side load switch (AP22815) cutting power to the NFC reader and DFPlayer entirely while asleep.
+* **Rechargeable:** Powered by a single-cell Li-Ion/LiPo battery with USB-C charging (via DFRobot Beetle C6).
+* **High-Quality Audio:** Uses the DFPlayer Mini with a dedicated speaker.
+* **No Custom PCBs:** Designed for point-to-point wiring on perfboard.
 
 ## 🛠️ Bill of Materials (BOM)
 
 | Component | Description | Quantity | Notes |
 | :--- | :--- | :--- | :--- |
-| **MCU** | **DFRobot Beetle ESP32-C6** | 1 | Selected for ultra-low power & integrated TP4057 battery charging. |
+| **MCU** | **DFRobot Beetle ESP32-C6** | 1 | Ultra-low power, integrated battery charging. |
 | **Audio Module** | **DFPlayer Mini** | 1 | MP3/WAV decoder with built-in 3W mono amp. |
 | **NFC Reader** | **RC522 Module** (13.56MHz) | 1 | Standard SPI interface. |
-| **Battery** | **18650 Li-Ion Cell** | 1 | 2000mAh - 3500mAh recommended. **Must include protection circuit if board does not.** |
+| **Power Switch IC** | **AP22815AWT-7** (TSOT25) | 1 | High-side load switch; gates VCC to the NFC reader and DFPlayer during sleep. |
+| **Battery** | **Single-cell Li-Ion/LiPo** | 1 | Must include protection circuit if the board does not. |
 | **Storage** | **MicroSD Card** | 1 | Max 32GB, formatted FAT32. |
 | **Speaker** | **3W 4Ω Full Range Driver** | 1 | Or a salvaged laptop speaker (approx 4Ω-8Ω). |
- uhb | **Tags** | **NTAG215 Stickers** | 10+ | One sticker per 3D printed record. |
+| **Tags** | **NTAG215 Stickers** | 10+ | One sticker per 3D printed record. |
 | **Switch** | **Slide/Toggle Switch** | 1 | Main system power cut-off. |
 | **Button** | **Momentary Push Button** | 1 | "Play/Wake" button. |
 | **Misc** | Perfboard, Wires, Resistors | - | For assembly. |
 
 ## 🔌 Wiring & Connections
 
-### 1\. Power Distribution
+### 1. Power Distribution
 
-  * **Battery:** Connected to Beetle C6 Battery Pads.
-  * **Main Switch:** Breaks the positive line between Battery and Beetle (or use the Beetle's power pads if applicable).
-  * **Peripherals:** The DFPlayer and RC522 are powered via the Beetle's VCC/GND pins.
+* **Battery → Beetle:** Connected to the Beetle's battery pads.
+* **Main Switch:** Breaks the positive line between battery and Beetle — a manual, full power cut-off independent of the deep-sleep logic below.
+* **Battery → AP22815 IN:** The load switch's input is wired to the raw battery pad (unswitched).
+* **AP22815 OUT → NFC + DFPlayer VCC:** Both peripherals share this single switched rail — they're always powered together, never independently.
+* **AP22815 EN ← GPIO 5:** Active-high. HIGH = peripherals powered, LOW = powered off (asserted before deep sleep).
+* **AP22815 FLG:** Tied directly to GND — fault flag is unused, not wired to any GPIO.
 
-### 2\. Pinout Table (Suggested)
+### 2. Pinout Table
 
 | ESP32-C6 Pin | Component Pin | Function |
 | :--- | :--- | :--- |
-| **TX (GPIO 16)** | DFPlayer **RX** | Serial Audio Control (UART) |
-| **RX (GPIO 17)** | DFPlayer **TX** | Serial Audio Feedback (UART) |
-| **SCK** | RC522 **SCK** | SPI Clock |
-| **MISO** | RC522 **MISO** | SPI Data In |
-| **MOSI** | RC522 **MOSI** | SPI Data Out |
-| **SDA (GPIO X)** | RC522 **SDA/SS** | Chip Select |
-| **GPIO 0 (or similar)**| Button | **Deep Sleep Wake Trigger** |
-
-*\> **Note:** The DFPlayer RX pin may require a 1kΩ resistor in series if the ESP32 logic level causes noise, though usually direct connection works at 3.3V logic.*
+| **GPIO 5** | AP22815 **EN** | Power gate (active-high) |
+| **GPIO 23** | RC522 **SCK** | SPI Clock |
+| **GPIO 21** | RC522 **MISO** | SPI Data In |
+| **GPIO 22** | RC522 **MOSI** | SPI Data Out |
+| **GPIO 19** | RC522 **SDA/SS** | Chip Select |
+| **GPIO 20** | RC522 **RST** | Reset |
+| **GPIO 17** | DFPlayer **TX** | ESP32 RX1 (UART) |
+| **GPIO 16** | DFPlayer **RX** | ESP32 TX1 (UART) — via 1kΩ series resistor |
+| **GPIO 6** | Wake Button | Active-low; wakes from Deep Sleep |
+| **GPIO 9** | Boot Button (onboard) | Active-low; hold at power-on for Maintenance Mode |
+| **GPIO 15** | Status LED (onboard) | |
 
 ## 💾 Firmware Logic
 
-To maximize battery life, the firmware operates on an event-driven "Deep Sleep" cycle:
-
-1.  **Idle State:** System is in Deep Sleep (uA current draw).
-2.  **Wake Event:** User presses "Play" button.
-3.  **Action:**
-      * MCU wakes up.
-      * Powers up RC522 reader.
-      * Checks for NFC Tag.
-      * **If Tag Found:** Maps UID to a specific folder/file on the SD card -\> Sends UART command to DFPlayer -\> ESP32 goes back to Sleep (Music continues playing via DFPlayer).
-      * **If No Tag:** Go back to Sleep.
+1. **Idle:** Deep Sleep (µA current draw), GPIO 5 LOW, peripherals unpowered.
+2. **Wake:** Button press → GPIO 5 HIGH → ~1.5s to let peripherals stabilize → init NFC reader and DFPlayer.
+3. **Scan:** Poll for a tag for up to 5 seconds (a button press restarts the window).
+4. **Tag found:** Map UID to a song, start playback. The MCU stays awake, checking every 500ms that the tag is still present.
+5. **Shutdown:** Triggered by no tag found within the scan window, the tag being removed, or a 30s playback timeout — stop playback, drive GPIO 5 LOW, return to Deep Sleep.
+6. **Maintenance Mode:** Hold the Boot Button while powering on to keep peripherals powered and print scanned tag UIDs to the Serial Monitor, for mapping new records. Never sleeps.
 
 ## 📂 SD Card Structure
 
-The DFPlayer Mini requires a specific folder structure to index songs correctly.
+The DFPlayer Mini's folder-based playback expects a specific structure:
 
 ```text
 SD Card Root
-│
-├── mp3
-│   ├── 0001songtitle.mp3
-│   ├── 0002songtitle.mp3
-│   └── ...
+└── 01/
+    ├── 001.mp3
+    ├── 002.mp3
+    └── ...
 ```
 
 ## 🖨️ Mechanical Design
 
-  * **Enclosure:** Box housing the electronics, speaker, and battery.
-  * **Top Surface:** Features a recess for the NFC reader (underneath the plastic) and a center spindle for the record.
-  * **Records:** 3D printed discs with a bottom recess to hide the NTAG215 sticker.
+* **Enclosure:** Box housing the electronics, speaker, and battery.
+* **Top Surface:** Features a recess for the NFC reader (underneath the plastic) and a center spindle for the record.
+* **Records:** 3D printed discs with a bottom recess to hide the NTAG215 sticker.
 
 ## 🚀 Getting Started
 
-1.  **Format SD Card:** Format to FAT32. Copy MP3 files into numbered folders (e.g., `01/001.mp3`).
-2.  **Flash Firmware:** Open the project in VS Code (PlatformIO) or Arduino IDE. Install `MFRC522` and `DFRobotDFPlayerMini` libraries.
-3.  **Map Tags:** Run the "Reader" sketch to get UIDs from your stickers. Update the `uid_to_song` mapping in the main code.
-4.  **Assemble:** Solder components to perfboard following the wiring diagram.
-5.  **Play:** Insert battery, flip the switch, place a record, and press Play\!
-
-
+1. **Format SD Card:** FAT32, with MP3 files in a `01/` folder named `001.mp3`, `002.mp3`, etc.
+2. **Flash Firmware:** Open the project in the Arduino IDE. Install the `MFRC522` and `DFRobotDFPlayerMini` libraries.
+3. **Map Tags:** Hold the Boot Button while powering on to enter Maintenance Mode, which prints each scanned tag's UID to the Serial Monitor. Add those UIDs to the tag list in `getSongFromUID()`.
+4. **Assemble:** Solder components to perfboard following the wiring table above.
+5. **Play:** Insert battery, flip the switch, place a record, and press Play!

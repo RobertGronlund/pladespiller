@@ -1,6 +1,12 @@
 /*
- * NFC Record Player for Kids - Firmware v3 (MOSFET Power Gate Edition)
+ * NFC Record Player for Kids - Firmware v4 (AP22815 Load Switch Edition)
  * Board: DFRobot Beetle ESP32-C6
+ *
+ * POWER GATING: GPIO5 (POWER_GATE_PIN) drives the EN pin of an AP22815AWT-7
+ * high-side load switch, which switches VCC (not GND) to the MFRC522 and
+ * DFPlayer Mini. Active-high: HIGH = peripherals powered, LOW = powered off.
+ * Both peripherals share a single switched OUT rail - there is no way to
+ * power one without the other.
  * * MODES:
  * 1. NORMAL MODE (Default): Wakes up, plays music based on tag, goes back to sleep.
  * 2. MAINTENANCE MODE: Hold BOOT BUTTON (GPIO 9) while turning on.
@@ -11,9 +17,10 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <DFRobotDFPlayerMini.h>
+#include "driver/gpio.h"
 
 // ================= PIN DEFINITIONS =================
-#define POWER_GATE_PIN 5   // MOSFET Gate to control GND of modules
+#define POWER_GATE_PIN 5   // AP22815 load switch EN - active-high, switches VCC to NFC/DFPlayer
 #define NFC_SCK_PIN    23 
 #define NFC_MISO_PIN   21 
 #define NFC_MOSI_PIN   22 
@@ -53,15 +60,16 @@ void setup() {
   Serial.begin(115200);
   
   // 1. POWER UP THE ISLAND
+  gpio_hold_dis((gpio_num_t)POWER_GATE_PIN); // Release hold latched before the last deep sleep
   pinMode(POWER_GATE_PIN, OUTPUT);
-  digitalWrite(POWER_GATE_PIN, HIGH); // Turn on MOSFET
+  digitalWrite(POWER_GATE_PIN, HIGH); // Turn on load switch
   
   pinMode(ONBOARD_LED, OUTPUT);
   pinMode(WAKE_BUTTON_PIN, INPUT_PULLUP);
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
   // Give modules time to boot from a cold start
-  delay(100); 
+  delay(1500);
 
   // 2. CHECK MAINTENANCE MODE
   if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
@@ -106,7 +114,7 @@ void loop() {
     // Ensure antenna stays powered
     mfrc522.PCD_AntennaOn();
     
-    // Maintenance mode keeps the MOSFET ON so you can scan tags
+    // Maintenance mode keeps the load switch ON so you can scan tags
     if (mfrc522.PICC_IsNewCardPresent()) {
       Serial.println("Card detected!");
       if (mfrc522.PICC_ReadCardSerial()) {
@@ -166,6 +174,8 @@ void loop() {
         Serial.println("Song playing. Remove tag to stop and shutdown.");
       } else {
         Serial.println("No card found. Press button to try again.");
+        shutdownDevice();
+
       }
     }
 
@@ -201,9 +211,22 @@ void shutdownDevice() {
   mfrc522.PICC_HaltA();
   mfrc522.PCD_StopCrypto1();
   
-  Serial.println("Shutting down Power Island...");
+  Serial.println("Shutting down peripherals...");
   mfrc522.PCD_SoftPowerDown();
-  digitalWrite(POWER_GATE_PIN, LOW); // MOSFET OFF - Kills GND to DFPlayer/NFC
+  digitalWrite(POWER_GATE_PIN, LOW); // Load switch OFF - cuts VCC to DFPlayer/NFC
+  gpio_hold_en((gpio_num_t)POWER_GATE_PIN); // Latch LOW through deep sleep (output state is otherwise not retained)
+
+  // Legacy from the old GND-switched design, where a floating/pulled-up data
+  // line could phantom-power the peripherals through their GND pin. Now that
+  // the AP22815 cuts VCC directly, this can't happen - kept only because it's
+  // harmless, not because it's still preventing leakage.
+  pinMode(NFC_SCK_PIN, INPUT);
+  pinMode(NFC_MOSI_PIN, INPUT);
+  pinMode(NFC_MISO_PIN, INPUT);
+  pinMode(NFC_CS_PIN, INPUT);
+  pinMode(NFC_RST_PIN, INPUT);
+  pinMode(DF_TX_PIN, INPUT);
+  pinMode(DF_RX_PIN, INPUT);
   
   // Configure ESP32-C6 Wakeup
   // 0 = Wake on LOW (button press)
