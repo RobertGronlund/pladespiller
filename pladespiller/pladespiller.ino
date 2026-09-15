@@ -68,8 +68,10 @@ void setup() {
   pinMode(WAKE_BUTTON_PIN, INPUT_PULLUP);
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
-  // Give modules time to boot from a cold start
-  delay(1500);
+  // Let the rail settle (AP22815 soft-start + decoupling caps charge).
+  // DFPlayer's own SD-card boot time is handled adaptively below by
+  // myDFPlayer.begin()'s reset-and-wait, not by a flat delay here.
+  delay(150);
 
   // 2. CHECK MAINTENANCE MODE
   if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
@@ -156,9 +158,9 @@ void loop() {
         
         if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
           songID = getSongFromUID(mfrc522.uid.uidByte, mfrc522.uid.size);
-          break; 
+          break;
         }
-        delay(50);
+        delay(20);
       }
 
       if (songID != -1) {
