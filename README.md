@@ -1,17 +1,9 @@
-# 🎵 NFC Kids Record Player
+# 🎵 Pladespiller
 
 A robust, battery-powered, open-source toy that mimics a classic record player. Designed for toddlers and young children, it uses 3D-printed "records" with embedded NFC tags to trigger music playback.
 
-The project prioritizes **low power consumption**, **ease of assembly** (no custom PCBs), and **simple physical interaction**.
+The project prioritizes **fun**, **ease of use** , and **great diverse music selection**.
 
-## TODO
-
-**Software**
-* Enable quick reset of songs
-* Playback should use `playLargeFolder(1, songID)` to match the `/01/` SD folder structure (currently uses `play(songID)`)
-
-**Hardware (maybe)**
-* Add cap to DFPlayer power
 
 ## ✨ Features
 
@@ -30,10 +22,9 @@ The project prioritizes **low power consumption**, **ease of assembly** (no cust
 | **NFC Reader** | **RC522 Module** (13.56MHz) | 1 | Standard SPI interface. |
 | **Power Switch IC** | **AP22815AWT-7** (TSOT25) | 1 | High-side load switch; gates VCC to the NFC reader and DFPlayer during sleep. |
 | **Battery** | **Single-cell Li-Ion/LiPo** | 1 | Must include protection circuit if the board does not. |
-| **Storage** | **MicroSD Card** | 1 | Max 32GB, formatted FAT32. |
+| **Storage** | **MicroSD Card** | 1 | Formatted FAT32. |
 | **Speaker** | **3W 4Ω Full Range Driver** | 1 | Or a salvaged laptop speaker (approx 4Ω-8Ω). |
 | **Tags** | **NTAG215 Stickers** | 10+ | One sticker per 3D printed record. |
-| **Switch** | **Slide/Toggle Switch** | 1 | Main system power cut-off. |
 | **Button** | **Momentary Push Button** | 1 | "Play/Wake" button. |
 | **Misc** | Perfboard, Wires, Resistors | - | For assembly. |
 
@@ -67,10 +58,10 @@ The project prioritizes **low power consumption**, **ease of assembly** (no cust
 ## 💾 Firmware Logic
 
 1. **Idle:** Deep Sleep (µA current draw), GPIO 5 LOW, peripherals unpowered.
-2. **Wake:** Button press → GPIO 5 HIGH → ~1.5s to let peripherals stabilize → init NFC reader and DFPlayer.
+2. **Wake:** Button press → GPIO 5 HIGH → ~150ms to let peripherals stabilize → init NFC reader and DFPlayer.
 3. **Scan:** Poll for a tag for up to 5 seconds (a button press restarts the window).
 4. **Tag found:** Map UID to a song, start playback. The MCU stays awake, checking every 500ms that the tag is still present.
-5. **Shutdown:** Triggered by no tag found within the scan window, the tag being removed, or a 30s playback timeout — stop playback, drive GPIO 5 LOW, return to Deep Sleep.
+5. **Shutdown:** Triggered by no tag found within the scan window, the tag being removed, or a 35s playback timeout — stop playback, drive GPIO 5 LOW, return to Deep Sleep.
 6. **Maintenance Mode:** Hold the Boot Button while powering on to keep peripherals powered and print scanned tag UIDs to the Serial Monitor, for mapping new records. Never sleeps.
 
 ## 📂 SD Card Structure
@@ -79,22 +70,23 @@ The DFPlayer Mini's folder-based playback expects a specific structure:
 
 ```text
 SD Card Root
-└── 01/
-    ├── 001.mp3
-    ├── 002.mp3
+└── mp3/
+    ├── 0001robert.mp3
+    ├── 0002pil.mp3
     └── ...
 ```
 
 ## 🖨️ Mechanical Design
 
 * **Enclosure:** Box housing the electronics, speaker, and battery.
-* **Top Surface:** Features a recess for the NFC reader (underneath the plastic) and a center spindle for the record.
-* **Records:** 3D printed discs with a bottom recess to hide the NTAG215 sticker.
+* **Top Surface:** Center spindle for the record, start button and a needle arm.
+* **Front Interface** Button, switch and encoder to play with.
+* **Records:** 3D printed discs with a the NTAG215 sticker embedded inside. Pause print, add sticker to pocket, and finish print.
 
 ## 🚀 Getting Started
 
-1. **Format SD Card:** FAT32, with MP3 files in a `01/` folder named `001.mp3`, `002.mp3`, etc.
+1. **Format SD Card:** FAT32, with MP3 files in a `mp3/` folder named `0001robert.mp3`, `0002pil.mp3`, etc.
 2. **Flash Firmware:** Open the project in the Arduino IDE. Install the `MFRC522` and `DFRobotDFPlayerMini` libraries.
 3. **Map Tags:** Hold the Boot Button while powering on to enter Maintenance Mode, which prints each scanned tag's UID to the Serial Monitor. Add those UIDs to the tag list in `getSongFromUID()`.
 4. **Assemble:** Solder components to perfboard following the wiring table above.
-5. **Play:** Insert battery, flip the switch, place a record, and press Play!
+5. **Play:** Charged battery, place a record, and press Play!
